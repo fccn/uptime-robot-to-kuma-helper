@@ -8,6 +8,7 @@ import {
 } from "./types";
 import {chromium, Page} from 'playwright';
 import axios from "axios";
+import HTMLElement from "typescript";
 
 dotenv.config()
 
@@ -56,6 +57,10 @@ const loadMonitorsFromUptimeRobot = async () => {
     return monitors
 }
 
+const renameName = (name: string) => {
+    return name.replace(/rctscert-/g, 'csirt-')
+}
+
 const UPTIME_ROBOT_DISABLE_MONITOR_API_PATH = "https://api.uptimerobot.com/v2/editMonitor"
 
 const disableUptimeRobotMonitor = async (monitor: UptimeRobotMonitor) => {
@@ -76,10 +81,10 @@ const disableUptimeRobotMonitor = async (monitor: UptimeRobotMonitor) => {
 
     const responseJson = response.data as UptimeRobotEditMonitorResponse
     if (responseJson?.stat === "fail") {
-        console.error(`Failed to edit monitor '${monitor.friendly_name}' due to '${responseJson.error?.type}'`)
+        console.error(`Failed to edit monitor '${renameName(renameName(monitor.friendly_name))}' due to '${responseJson.error?.type}'`)
         process.exit(1)
     } else {
-        console.log(`Disabled monitor "${monitor.friendly_name}"`)
+        console.log(`Disabled monitor "${renameName(monitor.friendly_name)}"`)
     }
 }
 
@@ -100,10 +105,10 @@ const deleteUptimeRobotMonitor = async (monitor: UptimeRobotMonitor) => {
     )
     const responseJson = response.data as UptimeRobotDeleteMonitorResponse
     if (responseJson?.stat === "fail") {
-        console.error(`Failed to delete monitor '${monitor.friendly_name}' due to '${responseJson.error?.type}'`)
+        console.error(`Failed to delete monitor '${renameName(monitor.friendly_name)}' due to '${responseJson.error?.type}'`)
         process.exit(1)
     } else {
-        console.log(`Deleted monitor "${monitor.friendly_name}"`)
+        console.log(`Deleted monitor "${renameName(monitor.friendly_name)}"`)
     }
 }
 
@@ -124,7 +129,28 @@ const ensureLoggedIn = async (page: Page) => {
     await page.waitForLoadState("domcontentloaded")
 }
 
-const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
+const monitorAlreadyExist = async (page: Page, monitor: UptimeRobotMonitor) => {
+    await page.waitForLoadState('domcontentloaded')
+    await page.waitForLoadState('networkidle')
+
+    await page.getByPlaceholder('Search…').fill(renameName(monitor.friendly_name))
+    await page.waitForTimeout(3000)
+
+    // Check if monitor with the same friendly name already exists on 'monitor-list scrollbar' class element
+    const firstMonitor = await page.$('.monitor-list div')
+
+    if (firstMonitor !== null) {
+        const firstMonitorText = await firstMonitor.textContent()
+        if (firstMonitorText && firstMonitorText.includes('No Monitors, please')) {
+            return false
+        }
+    } else {
+        return false
+    }
+    return true
+}
+
+const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {    
     await page.waitForLoadState('domcontentloaded')
     await page.waitForLoadState('networkidle')
 
@@ -135,7 +161,7 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
 
 
     await page.waitForTimeout(100)
-    await page.getByLabel('Friendly Name').first().fill(monitor.friendly_name)
+    await page.getByLabel('Friendly Name').first().fill(renameName(monitor.friendly_name))
 
     switch (monitor.type) {
         case 1:
@@ -148,8 +174,41 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
             await createMonitorPort(page, monitor)
             break
         default:
-            console.log(`Monitor type ${monitor.type} of ${monitor.friendly_name} is not supported`)
+            console.log(`Monitor type ${monitor.type} of ${renameName(monitor.friendly_name)} is not supported`)
             break
+    }
+
+    if (renameName(monitor.friendly_name).includes('arquivo.pt')) {
+        await page.getByLabel("Arquivo.pt Email").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('arquivo.pt')) {
+        await page.getByLabel("Arquivo.pt IM").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('nau ')) {
+        await page.getByLabel("NAU Email").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('nau ')) {
+        await page.getByLabel("NAU IM").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('sm ')) {
+        await page.getByLabel("SM Email").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('sm ')) {
+        await page.getByLabel("SM Slack").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('sm ')) {
+        await page.getByLabel("SM IM").click()
+        await page.waitForTimeout(400)
+    }
+    if (renameName(monitor.friendly_name).includes('csirt-')) {
+        await page.getByLabel("csirt Email").click()
+        await page.waitForTimeout(400)
     }
 
     await page.getByLabel('Heartbeat Interval (Check every').fill(String(monitor.interval))
@@ -162,7 +221,7 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
 
     await page.waitForTimeout(400)
 
-    console.log('Created Monitor ', monitor.friendly_name)
+    console.log('Created Monitor ', renameName(monitor.friendly_name))
 }
 
 const createMonitorHTTP = async (page: Page, monitor: UptimeRobotMonitor) => {
@@ -193,7 +252,12 @@ const copyMonitors = async () => {
     await ensureLoggedIn(page)
 
     for (let monitor of monitors) {
-        await createMonitor(page, monitor)
+        if (await monitorAlreadyExist(page, monitor)) {
+            console.log(`Monitor "${renameName(monitor.friendly_name)}" already exists, skipping...`)
+        } else {
+            console.log(`Creating monitor "${renameName(monitor.friendly_name)}"...`)
+            await createMonitor(page, monitor)
+        }
     }
 
     await browser.close()
