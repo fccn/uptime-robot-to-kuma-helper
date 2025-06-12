@@ -129,7 +129,17 @@ const ensureLoggedIn = async (page: Page) => {
     await page.waitForLoadState("domcontentloaded")
 }
 
-const monitorAlreadyExist = async (page: Page, monitor: UptimeRobotMonitor) => {
+const startUp = async () => {
+    const browser = await startPlaywright()
+    const page = await browser.newPage()
+    await page.goto(KUMA_URL)
+    await ensureLoggedIn(page)
+    return { page, browser }
+}
+
+const monitorAlreadyExist = async (monitor: UptimeRobotMonitor) => {
+    const { page, browser } = await startUp()
+
     await page.waitForLoadState('domcontentloaded')
     await page.waitForLoadState('networkidle')
 
@@ -138,19 +148,23 @@ const monitorAlreadyExist = async (page: Page, monitor: UptimeRobotMonitor) => {
 
     // Check if monitor with the same friendly name already exists on 'monitor-list scrollbar' class element
     const firstMonitor = await page.$('.monitor-list div')
-
     if (firstMonitor !== null) {
         const firstMonitorText = await firstMonitor.textContent()
         if (firstMonitorText && firstMonitorText.includes('No Monitors, please')) {
+            browser.close()
             return false
         }
     } else {
+        browser.close()
         return false
     }
+    browser.close()
     return true
 }
 
-const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {    
+const createMonitor = async (monitor: UptimeRobotMonitor) => {
+    const { page, browser } = await startUp()
+
     await page.waitForLoadState('domcontentloaded')
     await page.waitForLoadState('networkidle')
 
@@ -160,7 +174,7 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
     await createButton?.click()
 
 
-    await page.waitForTimeout(100)
+    await page.waitForTimeout(1000)
     await page.getByLabel('Friendly Name').first().fill(renameName(monitor.friendly_name))
 
     switch (monitor.type) {
@@ -179,37 +193,30 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
     }
 
     if (renameName(monitor.friendly_name).includes('arquivo.pt')) {
-        await page.getByLabel("Arquivo.pt Email").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("Arquivo.pt Email")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('arquivo.pt')) {
-        await page.getByLabel("Arquivo.pt IM").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("Arquivo.pt IM")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('nau ')) {
-        await page.getByLabel("NAU Email").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("NAU Email")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('nau ')) {
-        await page.getByLabel("NAU IM").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("NAU IM")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('sm ')) {
-        await page.getByLabel("SM Email").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("SM Email")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('sm ')) {
-        await page.getByLabel("SM Slack").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("SM Slack")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('sm ')) {
-        await page.getByLabel("SM IM").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("SM IM")'))).click();
     }
     if (renameName(monitor.friendly_name).includes('csirt-')) {
-        await page.getByLabel("csirt Email").click()
-        await page.waitForTimeout(400)
+        (await (page.waitForSelector(':text("csirt Email")'))).click();
     }
+    await page.waitForTimeout(1000)
 
     await page.getByLabel('Heartbeat Interval (Check every').fill(String(monitor.interval))
 
@@ -221,6 +228,7 @@ const createMonitor = async (page: Page, monitor: UptimeRobotMonitor) => {
 
     await page.waitForTimeout(400)
 
+    browser.close()
     console.log('Created Monitor ', renameName(monitor.friendly_name))
 }
 
@@ -245,22 +253,21 @@ const copyMonitors = async () => {
     const monitors = await loadMonitorsFromUptimeRobot()
     console.log(`Found ${monitors.length} monitors`)
 
-    const browser = await startPlaywright()
-    const page = await browser.newPage()
-    await page.goto(KUMA_URL)
-
-    await ensureLoggedIn(page)
-
+    let skipUntil = true;
     for (let monitor of monitors) {
-        if (await monitorAlreadyExist(page, monitor)) {
+        if (skipUntil) {
+            if (monitor.friendly_name.includes('nau - ')) {
+                skipUntil = false;
+            }
+            continue;
+        }
+        if (await monitorAlreadyExist(monitor)) {
             console.log(`Monitor "${renameName(monitor.friendly_name)}" already exists, skipping...`)
         } else {
             console.log(`Creating monitor "${renameName(monitor.friendly_name)}"...`)
-            await createMonitor(page, monitor)
+            await createMonitor(monitor)
         }
     }
-
-    await browser.close()
 }
 
 const disableUptimeRobot = async () => {
